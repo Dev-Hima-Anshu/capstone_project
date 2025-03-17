@@ -7,6 +7,7 @@ import tempfile
 import time
 from pydub import AudioSegment
 import io
+import pyaudio
 import numpy as np
 from scipy.io import wavfile
 import matplotlib.pyplot as plt
