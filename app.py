@@ -10,6 +10,7 @@ import numpy as np
 from scipy.io import wavfile
 import matplotlib.pyplot as plt
 from streamlit_mic_recorder import mic_recorder
+import io
 
 # Set page configuration
 st.set_page_config(
@@ -110,6 +111,20 @@ LANGUAGES = {
 
 # Initialize translator
 translator = Translator()
+
+# Function to convert raw audio bytes to WAV
+def convert_to_wav(audio_bytes):
+    try:
+        # Load audio from bytes (assume it might be WebM or another format)
+        audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
+        # Export as WAV
+        wav_io = io.BytesIO()
+        audio_segment.export(wav_io, format='wav')
+        wav_io.seek(0)
+        return wav_io
+    except Exception as e:
+        st.error(f"Error converting audio to WAV: {str(e)}")
+        return None
 
 # Function to visualize audio waveform
 def plot_waveform(audio_data, rate):
@@ -221,46 +236,51 @@ with tab1:
         
         audio_bytes = audio['bytes']
         
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
-            temp_audio.write(audio_bytes)
-            temp_audio_path = temp_audio.name
-        
-        # Visualize waveform
-        try:
-            sample_rate, audio_data = wavfile.read(temp_audio_path)
-            if len(audio_data.shape) > 1:
-                audio_data = audio_data[:, 0]  # Use first channel for stereo
-            st.markdown("**Recorded Audio Visualization:**")
-            st.pyplot(plot_waveform(audio_data, sample_rate))
-        except Exception as e:
-            st.warning(f"Could not visualize audio: {str(e)}")
-        
-        # Transcribe
-        r = sr.Recognizer()
-        with sr.AudioFile(temp_audio_path) as source:
-            audio_data = r.record(source)
-        
-        with st.spinner("Transcribing and translating..."):
-            transcribed_text = transcribe_audio(audio_data, source_lang_live[0])
+        # Convert to WAV format
+        wav_io = convert_to_wav(audio_bytes)
+        if wav_io is None:
+            st.error("Failed to process recorded audio.")
+        else:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
+                temp_audio.write(wav_io.read())
+                temp_audio_path = temp_audio.name
             
-            if "Error" not in transcribed_text and "could not understand" not in transcribed_text:
-                translated_text = translate_text(transcribed_text, target_lang_live[0])
-                translated_audio_path = text_to_speech(translated_text, target_lang_live[0])
+            # Visualize waveform
+            try:
+                sample_rate, audio_data = wavfile.read(temp_audio_path)
+                if len(audio_data.shape) > 1:
+                    audio_data = audio_data[:, 0]  # Use first channel for stereo
+                st.markdown("**Recorded Audio Visualization:**")
+                st.pyplot(plot_waveform(audio_data, sample_rate))
+            except Exception as e:
+                st.warning(f"Could not visualize audio: {str(e)}")
+            
+            # Transcribe
+            r = sr.Recognizer()
+            with sr.AudioFile(temp_audio_path) as source:
+                audio_data = r.record(source)
+            
+            with st.spinner("Transcribing and translating..."):
+                transcribed_text = transcribe_audio(audio_data, source_lang_live[0])
                 
-                st.markdown(f"**Original:** {transcribed_text}")
-                st.markdown(f"**Translated:** {translated_text}")
-                st.audio(translated_audio_path, format='audio/mp3')
-                
-                # Clean up translated audio file
-                if os.path.exists(translated_audio_path):
-                    time.sleep(2)  # Allow audio to play before deletion
-                    os.remove(translated_audio_path)
-            else:
-                st.error(transcribed_text)
-        
-        # Clean up recorded audio file
-        if os.path.exists(temp_audio_path):
-            os.remove(temp_audio_path)
+                if "Error" not in transcribed_text and "could not understand" not in transcribed_text:
+                    translated_text = translate_text(transcribed_text, target_lang_live[0])
+                    translated_audio_path = text_to_speech(translated_text, target_lang_live[0])
+                    
+                    st.markdown(f"**Original:** {transcribed_text}")
+                    st.markdown(f"**Translated:** {translated_text}")
+                    st.audio(translated_audio_path, format='audio/mp3')
+                    
+                    # Clean up translated audio file
+                    if os.path.exists(translated_audio_path):
+                        time.sleep(2)  # Allow audio to play before deletion
+                        os.remove(translated_audio_path)
+                else:
+                    st.error(transcribed_text)
+            
+            # Clean up recorded audio file
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
 
 # Tab 2: File Translation
 with tab2:
