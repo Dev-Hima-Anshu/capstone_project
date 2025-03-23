@@ -6,55 +6,74 @@ import os
 import tempfile
 import time
 from pydub import AudioSegment
-import io
-import pyaudio
 import numpy as np
 from scipy.io import wavfile
 import matplotlib.pyplot as plt
+from streamlit_mic_recorder import mic_recorder
 
 # Set page configuration
 st.set_page_config(
     page_title="Audio Translation Hub",
     page_icon="🎙️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"  # Hide sidebar initially
 )
 
-# Custom CSS for better styling
+# Updated CSS for Sesame-like styling
 st.markdown("""
 <style>
     .main {
-        background-color: #f5f7f9;
+        background-color: #f5f7f9;  /* Light gray background */
+        font-family: 'Inter', sans-serif;  /* Modern sans-serif font */
+    }
+    h1, h2, h3 {
+        color: #1e3d59;  /* Darker blue for headings */
+        font-weight: 600;
     }
     .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
+        gap: 20px;
+        justify-content: center;  /* Center tabs like Sesame’s clean layout */
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
-        white-space: pre-wrap;
-        background-color: #f0f2f6;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
+        background-color: #f0f2f6;  /* Light gray for inactive tabs */
+        border-radius: 8px 8px 0 0;
+        padding: 10px 20px;
+        font-size: 16px;
+        color: #1e3d59;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #4e89ae;
+        background-color: #4e89ae;  /* Sesame’s blue for active tab */
         color: white;
     }
     .stButton>button {
-        color: white;
         background-color: #4e89ae;
-        width: 100%;
+        color: white;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-size: 16px;
+        width: auto;  /* More natural button size */
+        transition: background-color 0.3s;
     }
-    .css-18e3th9 {
-        padding-top: 2rem;
+    .stButton>button:hover {
+        background-color: #326b8f;  /* Darker blue on hover */
     }
-    .css-1d391kg {
-        padding-top: 3.5rem;
+    .stSelectbox, .stTextArea {
+        background-color: white;
+        border-radius: 8px;
+        padding: 5px;
     }
-    h1, h2, h3 {
-        color: #1e3d59;
+    .css-18e3th9, .css-1d391kg {
+        padding-top: 2rem;  /* Reduced padding for a tighter layout */
+    }
+    .stAudio, .stDownloadButton {
+        margin-top: 10px;
+    }
+    .waveform {
+        background-color: white;
+        border-radius: 8px;
+        padding: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -94,28 +113,10 @@ translator = Translator()
 
 # Function to visualize audio waveform
 def plot_waveform(audio_data, rate):
-    duration = len(audio_data) / rate
-    time_axis = np.linspace(0, duration, len(audio_data))
-    
-    fig, ax = plt.subplots(figsize=(10, 2))
-    ax.plot(time_axis, audio_data, color='#4e89ae', linewidth=0.5)
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Amplitude')
-    ax.set_title('Audio Waveform')
-    ax.grid(True, alpha=0.3)
-    
+    fig, ax = plt.subplots(figsize=(8, 1.5))  # Smaller for compactness
+    ax.plot(np.linspace(0, len(audio_data) / rate, len(audio_data)), audio_data, color='#4e89ae', lw=0.8)
+    ax.set_axis_off()  # Minimalist, like Sesame’s visuals
     return fig
-
-# Function to record audio
-def record_audio(duration=5):
-    r = sr.Recognizer()
-    with sr.Microphone() as source:
-        st.write("Adjusting for ambient noise...")
-        r.adjust_for_ambient_noise(source)
-        st.write(f"Recording for {duration} seconds...")
-        audio = r.listen(source, timeout=duration, phrase_time_limit=duration)
-    
-    return audio
 
 # Function to transcribe audio
 def transcribe_audio(audio_data, language='en-US'):
@@ -190,262 +191,209 @@ def convert_audio_file(input_file, output_format):
         st.error(f"Conversion error: {str(e)}")
         return None
 
-# Main app header
-st.title("🌐 Audio Translation Hub")
-st.markdown("Translate speech and audio files between languages seamlessly")
+# Header Section
+st.title("Audio Translation Hub")
+st.markdown(
+    """
+    **Bridging languages through voice.**  
+    Experience seamless speech translation with cutting-edge AI—live, from files, or text.
+    """,
+    unsafe_allow_html=True
+)
 
-# Create tabs for different features
+# Demo Section (Tabs)
+st.markdown("### Try It Yourself")
 tab1, tab2, tab3 = st.tabs(["🎤 Live Translation", "📁 File Translation", "✏️ Text Translation"])
 
 # Tab 1: Live Translation
 with tab1:
-    st.header("Live Speech Translation")
-    
+    st.markdown("#### Record and Translate Live")
     col1, col2 = st.columns(2)
-    
     with col1:
-        source_lang_live = st.selectbox(
-            "Source Language",
-            options=list(LANGUAGES.items()),
-            format_func=lambda x: x[1],
-            key="source_live"
-        )
-        
-        record_duration = st.slider("Recording Duration (seconds)", 1, 60, 5)
-    
+        source_lang_live = st.selectbox("Source Language", options=list(LANGUAGES.items()), format_func=lambda x: x[1], key="source_live")
     with col2:
-        target_lang_live = st.selectbox(
-            "Target Language",
-            options=list(LANGUAGES.items()),
-            format_func=lambda x: x[1],
-            key="target_live"
-        )
+        target_lang_live = st.selectbox("Target Language", options=list(LANGUAGES.items()), format_func=lambda x: x[1], key="target_live")
     
-    if st.button("Start Recording"):
-        with st.spinner("Recording..."):
-            audio_data = record_audio(record_duration)
-            
+    audio = mic_recorder(start_prompt="Start Recording", stop_prompt="Stop Recording", key="live_recorder")
+    
+    if audio:
         st.success("Recording complete!")
         
-        with st.spinner("Transcribing..."):
-            # Use the language code from the tuple
+        audio_bytes = audio['bytes']
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
+            temp_audio.write(audio_bytes)
+            temp_audio_path = temp_audio.name
+        
+        # Visualize waveform
+        try:
+            sample_rate, audio_data = wavfile.read(temp_audio_path)
+            if len(audio_data.shape) > 1:
+                audio_data = audio_data[:, 0]  # Use first channel for stereo
+            st.markdown("**Recorded Audio Visualization:**")
+            st.pyplot(plot_waveform(audio_data, sample_rate))
+        except Exception as e:
+            st.warning(f"Could not visualize audio: {str(e)}")
+        
+        # Transcribe
+        r = sr.Recognizer()
+        with sr.AudioFile(temp_audio_path) as source:
+            audio_data = r.record(source)
+        
+        with st.spinner("Transcribing and translating..."):
             transcribed_text = transcribe_audio(audio_data, source_lang_live[0])
-        
-        st.subheader("Original Text:")
-        st.write(transcribed_text)
-        
-        with st.spinner("Translating..."):
-            translated_text = translate_text(transcribed_text, target_lang_live[0])
-        
-        st.subheader("Translated Text:")
-        st.write(translated_text)
-        
-        with st.spinner("Generating audio..."):
-            translated_audio_path = text_to_speech(translated_text, target_lang_live[0])
             
-            if translated_audio_path:
+            if "Error" not in transcribed_text and "could not understand" not in transcribed_text:
+                translated_text = translate_text(transcribed_text, target_lang_live[0])
+                translated_audio_path = text_to_speech(translated_text, target_lang_live[0])
+                
+                st.markdown(f"**Original:** {transcribed_text}")
+                st.markdown(f"**Translated:** {translated_text}")
                 st.audio(translated_audio_path, format='audio/mp3')
                 
-                # Clean up temporary file
+                # Clean up translated audio file
                 if os.path.exists(translated_audio_path):
-                    time.sleep(2)  # Give time for audio player to load the file
+                    time.sleep(2)  # Allow audio to play before deletion
                     os.remove(translated_audio_path)
+            else:
+                st.error(transcribed_text)
+        
+        # Clean up recorded audio file
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
 
 # Tab 2: File Translation
 with tab2:
-    st.header("Audio File Translation")
-    
+    st.markdown("#### Upload and Translate Audio")
     col1, col2 = st.columns(2)
-    
     with col1:
-        source_lang_file = st.selectbox(
-            "Source Language",
-            options=list(LANGUAGES.items()),
-            format_func=lambda x: x[1],
-            key="source_file"
-        )
-        
-        output_format = st.selectbox(
-            "Output Format",
-            options=["mp3", "wav", "ogg", "flac"],
-            key="output_format"
-        )
-    
+        source_lang_file = st.selectbox("Source Language", options=list(LANGUAGES.items()), format_func=lambda x: x[1], key="source_file")
+        output_format = st.selectbox("Output Format", options=["mp3", "wav", "ogg", "flac"], key="output_format")
     with col2:
-        target_lang_file = st.selectbox(
-            "Target Language",
-            options=list(LANGUAGES.items()),
-            format_func=lambda x: x[1],
-            key="target_file"
-        )
+        target_lang_file = st.selectbox("Target Language", options=list(LANGUAGES.items()), format_func=lambda x: x[1], key="target_file")
     
-    uploaded_file = st.file_uploader("Upload Audio File", type=["mp3", "wav", "ogg", "flac"])
+    uploaded_file = st.file_uploader("Upload Audio", type=["mp3", "wav", "ogg", "flac"])
     
-    if uploaded_file is not None:
-        st.success("File uploaded successfully!")
-        
-        # Save the uploaded file to a temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{uploaded_file.name.split(".")[-1]}') as temp_file:
-            temp_file.write(uploaded_file.getvalue())
-            temp_file_path = temp_file.name
-        
-        # Visualize the audio waveform if it's a WAV file
-        if uploaded_file.name.endswith('.wav'):
-            try:
-                sample_rate, audio_data = wavfile.read(temp_file_path)
-                if len(audio_data.shape) > 1:  # Check if stereo
-                    audio_data = audio_data[:, 0]  # Just use first channel
-                st.write("Audio Visualization:")
-                st.pyplot(plot_waveform(audio_data, sample_rate))
-            except Exception as e:
-                st.warning(f"Could not visualize this audio file: {str(e)}")
-        
-        if st.button("Translate Audio File"):
-            with st.spinner("Processing audio file..."):
-                # Convert to text
-                transcribed_text = audio_file_to_text(uploaded_file, source_lang_file[0])
+    if uploaded_file and st.button("Translate Audio"):
+        with st.spinner("Processing audio file..."):
+            # Save the uploaded file to a temporary location
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{uploaded_file.name.split(".")[-1]}') as temp_file:
+                temp_file.write(uploaded_file.getvalue())
+                temp_file_path = temp_file.name
+            
+            # Visualize the audio waveform if it's a WAV file
+            if uploaded_file.name.endswith('.wav'):
+                try:
+                    sample_rate, audio_data = wavfile.read(temp_file_path)
+                    if len(audio_data.shape) > 1:  # Check if stereo
+                        audio_data = audio_data[:, 0]  # Just use first channel
+                    st.markdown("**Audio Visualization:**")
+                    st.pyplot(plot_waveform(audio_data, sample_rate))
+                except Exception as e:
+                    st.warning(f"Could not visualize this audio file: {str(e)}")
+            
+            # Convert to text
+            transcribed_text = audio_file_to_text(uploaded_file, source_lang_file[0])
+            
+            if "Error" in transcribed_text or "could not understand" in transcribed_text:
+                st.error(transcribed_text)
+            else:
+                # Translate text
+                translated_text = translate_text(transcribed_text, target_lang_file[0])
                 
-                if "Error" in transcribed_text or "could not understand" in transcribed_text:
-                    st.error(transcribed_text)
-                else:
-                    st.subheader("Original Text:")
-                    st.write(transcribed_text)
-                    
-                    # Translate text
-                    with st.spinner("Translating..."):
-                        translated_text = translate_text(transcribed_text, target_lang_file[0])
-                    
-                    st.subheader("Translated Text:")
-                    st.write(translated_text)
-                    
-                    # Convert translated text to speech
-                    with st.spinner("Generating translated audio..."):
-                        translated_audio_path = text_to_speech(translated_text, target_lang_file[0])
+                # Convert translated text to speech
+                translated_audio_path = text_to_speech(translated_text, target_lang_file[0])
+                
+                if translated_audio_path:
+                    # Convert to desired output format if needed
+                    if not translated_audio_path.endswith(f'.{output_format}'):
+                        final_audio_path = convert_audio_file(translated_audio_path, output_format)
                         
-                        if translated_audio_path:
-                            # Convert to desired output format if needed
-                            if not translated_audio_path.endswith(f'.{output_format}'):
-                                final_audio_path = convert_audio_file(translated_audio_path, output_format)
-                                
-                                # Clean up the intermediate file
-                                if os.path.exists(translated_audio_path):
-                                    os.remove(translated_audio_path)
-                            else:
-                                final_audio_path = translated_audio_path
-                            
-                            st.subheader("Translated Audio:")
-                            st.audio(final_audio_path)
-                            
-                            # Offer download option
-                            with open(final_audio_path, "rb") as file:
-                                btn = st.download_button(
-                                    label=f"Download Translated Audio ({output_format.upper()})",
-                                    data=file,
-                                    file_name=f"translated_audio.{output_format}",
-                                    mime=f"audio/{output_format}"
-                                )
-                            
-                            # Clean up temporary files
-                            if os.path.exists(final_audio_path):
-                                time.sleep(2)  # Give time for audio player to load the file
-                                os.remove(final_audio_path)
-        
-        # Clean up uploaded temp file
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+                        # Clean up the intermediate file
+                        if os.path.exists(translated_audio_path):
+                            os.remove(translated_audio_path)
+                    else:
+                        final_audio_path = translated_audio_path
+                    
+                    st.markdown(f"**Original:** {transcribed_text}")
+                    st.markdown(f"**Translated:** {translated_text}")
+                    st.audio(final_audio_path)
+                    
+                    # Offer download option
+                    with open(final_audio_path, "rb") as file:
+                        st.download_button(
+                            label=f"Download ({output_format.upper()})",
+                            data=file,
+                            file_name=f"translated_audio.{output_format}",
+                            mime=f"audio/{output_format}"
+                        )
+                    
+                    # Clean up temporary files
+                    if os.path.exists(final_audio_path):
+                        time.sleep(2)  # Give time for audio player to load the file
+                        os.remove(final_audio_path)
+            
+            # Clean up uploaded temp file
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
 
 # Tab 3: Text Translation
 with tab3:
-    st.header("Text Translation")
-    
+    st.markdown("#### Translate Your Text")
     col1, col2 = st.columns(2)
-    
     with col1:
-        source_lang_text = st.selectbox(
-            "Source Language",
-            options=list(LANGUAGES.items()),
-            format_func=lambda x: x[1],
-            key="source_text"
-        )
-    
+        source_lang_text = st.selectbox("Source Language", options=list(LANGUAGES.items()), format_func=lambda x: x[1], key="source_text")
     with col2:
-        target_lang_text = st.selectbox(
-            "Target Language",
-            options=list(LANGUAGES.items()),
-            format_func=lambda x: x[1],
-            key="target_text"
-        )
+        target_lang_text = st.selectbox("Target Language", options=list(LANGUAGES.items()), format_func=lambda x: x[1], key="target_text")
     
-    text_input = st.text_area("Enter text to translate", height=150)
+    text_input = st.text_area("Enter text", height=100)
     
     col3, col4 = st.columns(2)
-    
     with col3:
-        translate_button = st.button("Translate Text")
-    
-    with col4:
-        speak_button = st.button("Speak Translation")
-    
-    if translate_button or speak_button:
-        if not text_input:
-            st.warning("Please enter some text to translate.")
-        else:
-            with st.spinner("Translating..."):
+        if st.button("Translate"):
+            if not text_input:
+                st.warning("Please enter some text to translate.")
+            else:
                 translated_text = translate_text(text_input, target_lang_text[0])
-            
-            st.subheader("Translation:")
-            st.write(translated_text)
-            
-            if speak_button:
-                with st.spinner("Generating audio..."):
-                    audio_path = text_to_speech(translated_text, target_lang_text[0])
-                    
-                    if audio_path:
-                        st.audio(audio_path, format='audio/mp3')
-                        
-                        # Clean up temporary file
-                        if os.path.exists(audio_path):
-                            time.sleep(2)  # Give time for audio player to load the file
-                            os.remove(audio_path)
+                st.markdown(f"**Translation:** {translated_text}")
+    with col4:
+        if st.button("Speak"):
+            if not text_input:
+                st.warning("Please enter some text to translate.")
+            else:
+                translated_text = translate_text(text_input, target_lang_text[0])
+                audio_path = text_to_speech(translated_text, target_lang_text[0])
+                st.audio(audio_path, format='audio/mp3')
+                
+                # Clean up temporary file
+                if os.path.exists(audio_path):
+                    time.sleep(2)  # Give time for audio player to load the file
+                    os.remove(audio_path)
 
-# Sidebar with app info
-with st.sidebar:
-    st.title("About")
-    st.info(
-        """
-        This application demonstrates audio translation 
-        using machine learning capabilities.
-        
-        Features:
-        - Live audio translation
-        - Audio file translation
-        - Text-to-text translation with audio playback
-        
-        Powered by Google's speech recognition and translation services.
-        """
-    )
-    
-    st.subheader("Translation Stats")
-    st.metric("Languages Available", len(LANGUAGES))
-    
-    st.subheader("How It Works")
-    st.markdown(
-        """
-        1. **Speech Recognition** converts speech to text
-        2. **Machine Translation** translates the text
-        3. **Text-to-Speech** converts translated text to audio
-        """
-    )
-    
-    st.subheader("ML Components")
-    st.markdown(
-        """
-        - Speech Recognition: Uses Google's API
-        - Text Translation: Neural Machine Translation
-        - Audio Processing: Signal processing techniques
-        """
-    )
+# Technical Details Section
+st.markdown("### How It Works")
+st.markdown(
+    """
+    Our Audio Translation Hub leverages:
+    - **Speech Recognition**: Google’s API for accurate transcription.
+    - **Translation**: Neural networks for natural language conversion.
+    - **Text-to-Speech**: gTTS for lifelike audio output.
+    """
+)
+
+# Vision Section
+st.markdown("### What’s Next")
+st.markdown(
+    """
+    Expanding to 50+ languages, integrating with IoT devices, and enhancing real-time performance for global communication.
+    """
+)
 
 # Footer
 st.markdown("---")
-st.markdown("Created as a capstone project for ML, DL, and IoT course | 2025")
+st.markdown(
+    """
+    Created as a capstone project for ML, DL, and IoT course | 2025  
+    Powered by open-source tools and Google APIs.
+    """
+)
